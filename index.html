@@ -243,6 +243,27 @@
             font-weight: 700;
         }
 
+        .legend-info {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            font-size: 0.9em;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 3px;
+            margin-right: 10px;
+            border-radius: 2px;
+        }
+
         @media (max-width: 1024px) {
             .content {
                 grid-template-columns: 1fr;
@@ -292,7 +313,7 @@
     <div class="container">
         <div class="header">
             <h1>📊 Simulador de Evolução de Previdência</h1>
-            <p>Calcule o crescimento do seu capital ao longo do tempo</p>
+            <p>Calcule o crescimento do seu capital ao longo do tempo com análise de IR e rendimento real</p>
         </div>
 
         <div class="content">
@@ -339,6 +360,16 @@
                     <button class="btn-calcular" onclick="calcular()">🧮 Calcular</button>
                     <button class="btn-limpar" onclick="limpar()">🔄 Limpar</button>
                 </div>
+
+                <div class="legend-info">
+                    <strong>📋 Tabela de IR Progressivo:</strong><br>
+                    • Até 24 meses: 35%<br>
+                    • 24-48 meses: 30%<br>
+                    • 48-72 meses: 25%<br>
+                    • 72-96 meses: 20%<br>
+                    • 96-120 meses: 15%<br>
+                    • Acima de 120 meses: 10%
+                </div>
             </div>
 
             <div class="chart-panel">
@@ -348,6 +379,20 @@
                 </div>
                 <div id="noChartMessage" class="no-data">
                     <p>👈 Preencha os dados e clique em "Calcular"</p>
+                </div>
+                <div class="legend-info">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #667eea;"></div>
+                        <span><strong>Azul:</strong> Saldo Bruto (sem IR)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #e74c3c;"></div>
+                        <span><strong>Vermelho:</strong> Saldo Líquido (com IR deduzido)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background-color: #28a745;"></div>
+                        <span><strong>Verde:</strong> Rentabilidade Real (descontado IPCA)</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -373,6 +418,15 @@
             }).format(valor);
         }
 
+        function obterAliquotaIR(meses) {
+            if (meses <= 24) return 0.35;
+            if (meses <= 48) return 0.30;
+            if (meses <= 72) return 0.25;
+            if (meses <= 96) return 0.20;
+            if (meses <= 120) return 0.15;
+            return 0.10;
+        }
+
         function calcular() {
             const capitalInicial = parseFloat(document.getElementById('capitalInicial').value) || 0;
             const valorAporte = parseFloat(document.getElementById('valorAporte').value) || 0;
@@ -391,9 +445,10 @@
             const ipcaMensal = ipca / 100 / 12;
 
             let saldo = capitalInicial;
-            const dados = [];
+            const dadosBrutos = [];
+            const dadosComIR = [];
+            const dadosReais = [];
             const labels = [];
-            let saldoAnterior = capitalInicial;
 
             // Dados mensais
             for (let mes = 1; mes <= numeroMeses; mes++) {
@@ -402,14 +457,31 @@
                 // Adicionar aporte
                 saldo = saldo + valorAporte;
                 
-                dados.push(parseFloat(saldo.toFixed(2)));
+                // Saldo bruto
+                const saldoBruto = parseFloat(saldo.toFixed(2));
+                dadosBrutos.push(saldoBruto);
+
+                // Calcular IR sobre os juros ganhos
+                const aporteTotal = capitalInicial + (valorAporte * mes);
+                const lucroAcumulado = saldoBruto - aporteTotal;
+                const aliquotaIR = obterAliquotaIR(mes);
+                const irAbatido = lucroAcumulado > 0 ? lucroAcumulado * aliquotaIR : 0;
+                const saldoLiquido = saldoBruto - irAbatido;
+                dadosComIR.push(parseFloat(saldoLiquido.toFixed(2)));
+
+                // Calcular rentabilidade real (descontado IPCA)
+                let saldoReal = capitalInicial;
+                for (let i = 1; i <= mes; i++) {
+                    saldoReal = saldoReal * (1 + rentaMensal) / (1 + ipcaMensal);
+                    saldoReal = saldoReal + valorAporte;
+                }
+                dadosReais.push(parseFloat(saldoReal.toFixed(2)));
+
                 labels.push(`Mês ${mes}`);
             }
 
             // Preparar dados para resumo anual
             const dadosAnuais = [];
-            const aportes = [];
-            const juros = [];
 
             for (let ano = 1; ano <= Math.ceil(numeroMeses / 12); ano++) {
                 const mesInicio = (ano - 1) * 12;
@@ -431,30 +503,40 @@
                     }
                 }
 
-                const rentabilidadeReal = ((1 + (rentabilidadePrev / 100)) / (1 + (ipca / 100)) - 1) * 100;
+                const aporteAcumulado = capitalInicial + (valorAporte * mesFinal);
+                const lucroTotal = saldoAno - aporteAcumulado;
+                const aliquotaIR = obterAliquotaIR(mesFinal);
+                const irTotal = lucroTotal > 0 ? lucroTotal * aliquotaIR : 0;
+                const saldoLiquidoAno = saldoAno - irTotal;
+
+                const rentabilidadeRealAno = ((1 + (rentabilidadePrev / 100)) / (1 + (ipca / 100)) - 1) * 100;
 
                 dadosAnuais.push({
                     ano: ano,
-                    meses: mesesdoAno,
+                    meses: mesFinal,
+                    mesesdoAno: mesesdoAno,
                     aportesAcumulados: aporteAnoTotal,
                     rentabilidadeNominal: rentabilidadePrev,
-                    rentabilidadeReal: rentabilidadeReal,
-                    saldoFinal: saldoAno,
+                    rentabilidadeReal: rentabilidadeRealAno,
+                    saldoBruto: saldoAno,
+                    irAbatido: irTotal,
+                    aliquotaIR: (aliquotaIR * 100).toFixed(0),
+                    saldoLiquido: saldoLiquidoAno,
                     jurosAcumulados: jurosAnoTotal
                 });
             }
 
             // Atualizar gráfico
-            atualizarGrafico(labels, dados);
+            atualizarGrafico(labels, dadosBrutos, dadosComIR, dadosReais);
 
             // Atualizar tabela
             atualizarTabela(dadosAnuais, capitalInicial);
 
             // Atualizar resumo
-            atualizarResumo(dados[dados.length - 1], capitalInicial, valorAporte * numeroMeses, cdi, rentabilidadePrev, ipca);
+            atualizarResumo(dadosBrutos[dadosBrutos.length - 1], dadosComIR[dadosComIR.length - 1], dadosReais[dadosReais.length - 1], capitalInicial, valorAporte * numeroMeses, cdi, rentabilidadePrev, ipca);
         }
 
-        function atualizarGrafico(labels, dados) {
+        function atualizarGrafico(labels, dadosBrutos, dadosComIR, dadosReais) {
             const ctx = document.getElementById('chartEvolution').getContext('2d');
             
             if (chartInstance) {
@@ -467,20 +549,50 @@
                 type: 'line',
                 data: {
                     labels: labels,
-                    datasets: [{
-                        label: 'Saldo Acumulado (R$)',
-                        data: dados,
-                        borderColor: '#667eea',
-                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                        borderWidth: 3,
-                        fill: true,
-                        tension: 0.4,
-                        pointRadius: 0,
-                        pointHoverRadius: 6,
-                        pointBackgroundColor: '#667eea',
-                        pointBorderColor: '#fff',
-                        pointBorderWidth: 2
-                    }]
+                    datasets: [
+                        {
+                            label: 'Saldo Bruto (Sem IR)',
+                            data: dadosBrutos,
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.05)',
+                            borderWidth: 3,
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: '#667eea',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2
+                        },
+                        {
+                            label: 'Saldo Líquido (Com IR)',
+                            data: dadosComIR,
+                            borderColor: '#e74c3c',
+                            backgroundColor: 'rgba(231, 76, 60, 0.05)',
+                            borderWidth: 3,
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: '#e74c3c',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2
+                        },
+                        {
+                            label: 'Rentabilidade Real (Descontado IPCA)',
+                            data: dadosReais,
+                            borderColor: '#28a745',
+                            backgroundColor: 'rgba(40, 167, 69, 0.05)',
+                            borderWidth: 3,
+                            fill: false,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: '#28a745',
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
@@ -500,8 +612,8 @@
                             titleFont: { size: 13, weight: 'bold' },
                             bodyFont: { size: 12 },
                             callbacks: {
-                                label: function(context) {
-                                    return 'Saldo: ' + formatar(context.parsed.y);
+                                afterLabel: function(context) {
+                                    return '';
                                 }
                             }
                         }
@@ -539,12 +651,15 @@
                     <thead>
                         <tr>
                             <th>Ano</th>
-                            <th>Meses do Período</th>
-                            <th>Aportes Acumulados</th>
-                            <th>Juros Acumulados</th>
-                            <th>Saldo Final</th>
+                            <th>Meses</th>
+                            <th>Aportes</th>
+                            <th>Juros</th>
+                            <th>Saldo Bruto</th>
+                            <th>Alíquota IR</th>
+                            <th>IR Abatido</th>
+                            <th>Saldo Líquido</th>
                             <th>Rentabilidade Nominal</th>
-                            <th>Rentabilidade Real (descontado IPCA)</th>
+                            <th>Rentabilidade Real</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -557,7 +672,10 @@
                         <td>${linha.meses}</td>
                         <td class="currency">${formatar(linha.aportesAcumulados)}</td>
                         <td class="currency">${formatar(linha.jurosAcumulados)}</td>
-                        <td class="currency"><strong>${formatar(linha.saldoFinal)}</strong></td>
+                        <td class="currency"><strong>${formatar(linha.saldoBruto)}</strong></td>
+                        <td class="percentage">${linha.aliquotaIR}%</td>
+                        <td class="currency" style="color: #e74c3c;">${formatar(linha.irAbatido)}</td>
+                        <td class="currency"><strong style="color: #28a745;">${formatar(linha.saldoLiquido)}</strong></td>
                         <td class="percentage">${linha.rentabilidadeNominal.toFixed(2)}%</td>
                         <td class="percentage">${linha.rentabilidadeReal.toFixed(2)}%</td>
                     </tr>
@@ -572,19 +690,37 @@
             document.getElementById('tableContainer').innerHTML = html;
         }
 
-        function atualizarResumo(saldoFinal, capitalInicial, aporteTotal, cdi, rentabilidadePrev, ipca) {
-            const lucro = saldoFinal - capitalInicial - aporteTotal;
+        function atualizarResumo(saldoBruto, saldoLiquido, saldoReal, capitalInicial, aporteTotal, cdi, rentabilidadePrev, ipca) {
+            const lucroBruto = saldoBruto - capitalInicial - aporteTotal;
+            const lucroLiquido = saldoLiquido - capitalInicial - aporteTotal;
+            const irTotal = lucroBruto - lucroLiquido;
             const rentabilidadeReal = ((1 + (rentabilidadePrev / 100)) / (1 + (ipca / 100)) - 1) * 100;
 
             const html = `
                 <div class="summary">
                     <div class="summary-card">
-                        <h3>💰 Saldo Final</h3>
-                        <div class="value">${formatar(saldoFinal)}</div>
+                        <h3>💰 Saldo Bruto</h3>
+                        <div class="value">${formatar(saldoBruto)}</div>
                     </div>
                     <div class="summary-card">
-                        <h3>💵 Lucro Gerado</h3>
-                        <div class="value" style="color: #28a745;">${formatar(lucro)}</div>
+                        <h3>🟢 Saldo Líquido</h3>
+                        <div class="value" style="color: #28a745;">${formatar(saldoLiquido)}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>📊 Saldo Real (IPCA)</h3>
+                        <div class="value" style="color: #764ba2;">${formatar(saldoReal)}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>💵 Lucro Bruto</h3>
+                        <div class="value" style="color: #667eea;">${formatar(lucroBruto)}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>💚 Lucro Líquido</h3>
+                        <div class="value" style="color: #28a745;">${formatar(lucroLiquido)}</div>
+                    </div>
+                    <div class="summary-card">
+                        <h3>🔴 IR Total Abatido</h3>
+                        <div class="value" style="color: #e74c3c;">${formatar(irTotal)}</div>
                     </div>
                     <div class="summary-card">
                         <h3>📈 Rentabilidade Nominal</h3>
